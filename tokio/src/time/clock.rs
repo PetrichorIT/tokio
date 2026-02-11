@@ -280,6 +280,35 @@ cfg_test_util! {
         crate::task::yield_now().await;
     }
 
+    /// Returns the next expiration time of the timer wheel.
+    ///
+    /// This value describes the earliest point in time at which a timer might expire
+    /// according to the current state of the time driver. It might not correspond to any
+    /// particular timer, but rather just an artificial wakeup to move the timer wheel along.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the following conditions are met:
+    /// - The Tokio runtime is not currently running.
+    /// - The runtime flavor is not current-thread.
+    /// - The clock is not paused
+    ///
+    pub fn next_expiration_time() -> Option<Instant> {
+        use crate::runtime::{Handle, RuntimeFlavor};
+        let Ok(handle) = Handle::try_current() else {
+            panic!("{}", crate::util::error::THREAD_LOCAL_DESTROYED_ERROR)
+        };
+        assert!(handle.runtime_flavor() == RuntimeFlavor::CurrentThread, "cannot use next_expiration_time on multi-threaded runtimes");
+
+        let clock = handle.inner.driver().clock();
+        let inner = clock.inner.lock();
+        if inner.unfrozen.is_some() {
+            panic!("time is not frozen");
+        }
+
+        handle.inner.driver().time().next_expiration_time()
+    }
+
     /// Returns the current instant, factoring in frozen time.
     pub(crate) fn now() -> Instant {
         if !DID_PAUSE_CLOCK.load(Ordering::Acquire) {

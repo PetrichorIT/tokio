@@ -33,6 +33,11 @@ impl TimeSource {
         Duration::from_millis(t)
     }
 
+    #[cfg(feature = "test-util")]
+    pub(crate) fn tick_to_instant(&self, t: u64) -> Instant {
+        self.start_time + self.tick_to_duration(t)
+    }
+
     pub(crate) fn now(&self, clock: &Clock) -> u64 {
         self.instant_to_tick(clock.now())
     }

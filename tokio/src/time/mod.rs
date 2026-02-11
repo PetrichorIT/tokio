@@ -87,7 +87,7 @@
 mod clock;
 pub(crate) use self::clock::Clock;
 cfg_test_util! {
-    pub use clock::{advance, pause, resume};
+    pub use clock::{advance, pause, resume, next_expiration_time};
 }
 
 pub mod error;

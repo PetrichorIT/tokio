@@ -324,6 +324,92 @@ async fn advance_multi_with_timer() {
     assert_ready!(sleep.poll());
 }
 
+#[tokio::test(start_paused = true)]
+async fn next_expiration_time_progesses() {
+    let mut sleep = task::spawn(time::sleep(Duration::from_millis(500)));
+    assert_pending!(sleep.poll());
+
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(448)); // 7*64 timer slot (Level 1)
+
+    time::advance(Duration::from_millis(448)).await;
+    assert_pending!(sleep.poll());
+
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(52)); // 52*1ms timer slot (Level 0)
+
+    time::advance(Duration::from_millis(52)).await;
+    assert!(sleep.is_woken());
+    assert_ready!(sleep.poll());
+
+    assert_eq!(time::next_expiration_time(), None); // No more timers
+}
+
+#[tokio::test(start_paused = true)]
+async fn next_expiration_time_multiple_timers() {
+    let mut sleep_64 = task::spawn(time::sleep(Duration::from_millis(64)));
+    let mut sleep_500 = task::spawn(time::sleep(Duration::from_millis(500)));
+    assert_pending!(sleep_64.poll());
+    assert_pending!(sleep_500.poll());
+
+    // (0)
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(64));
+
+    time::advance(Duration::from_millis(64)).await;
+    assert!(sleep_64.is_woken());
+    assert_ready!(sleep_64.poll());
+    assert_pending!(sleep_500.poll());
+
+    // (1)
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(384)); // 64ms + 6*64ms  = 448ms
+
+    time::advance(Duration::from_millis(384)).await;
+    assert_pending!(sleep_500.poll());
+
+    // (2)
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(52)); // 64ms + 6*64ms + 52ms = 500ms
+
+    time::advance(Duration::from_millis(52)).await;
+    assert!(sleep_500.is_woken());
+    assert_ready!(sleep_500.poll());
+
+    assert_eq!(time::next_expiration_time(), None); // No more timers
+}
+
+#[tokio::test(start_paused = true)]
+async fn next_expiration_time_sub_millisecond() {
+    let mut sleep_250 = task::spawn(time::sleep(Duration::from_micros(5000 + 250)));
+    let mut sleep_500 = task::spawn(time::sleep(Duration::from_micros(5000 + 500)));
+    assert_pending!(sleep_250.poll());
+    assert_pending!(sleep_500.poll());
+
+    let delta = time::next_expiration_time().unwrap() - Instant::now();
+    assert_eq!(delta, Duration::from_millis(6));
+
+    time::advance(Duration::from_millis(6)).await;
+    assert!(sleep_250.is_woken());
+    assert_ready!(sleep_250.poll());
+    assert!(sleep_500.is_woken());
+    assert_ready!(sleep_500.poll());
+
+    assert_eq!(time::next_expiration_time(), None); // No more timers
+}
+
+#[tokio::test]
+#[should_panic = "time is not frozen"]
+async fn next_expiration_time_panics_unpaused() {
+    time::next_expiration_time();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[should_panic = "cannot use next_expiration_time on multi-threaded runtimes"]
+async fn next_expiration_time_panics_rt_multi_thread() {
+    time::next_expiration_time();
+}
+
 fn poll_next(interval: &mut task::Spawn<time::Interval>) -> Poll<Instant> {
     interval.enter(|cx, mut interval| interval.poll_tick(cx))
 }

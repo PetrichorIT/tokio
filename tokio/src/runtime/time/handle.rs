@@ -1,4 +1,6 @@
 use crate::runtime::time::TimeSource;
+#[cfg(feature = "test-util")]
+use crate::time::Instant;
 use std::fmt;
 
 /// Handle to time driver instance.
@@ -16,6 +18,15 @@ impl Handle {
     /// Checks whether the driver has been shutdown.
     pub(super) fn is_shutdown(&self) -> bool {
         self.inner.is_shutdown()
+    }
+
+    #[cfg(feature = "test-util")]
+    pub(crate) fn next_expiration_time(&self) -> Option<Instant> {
+        self.inner
+            .lock()
+            .wheel
+            .next_expiration_time()
+            .map(|tick| self.time_source.tick_to_instant(tick))
     }
 
     /// Track that the driver is being unparked
